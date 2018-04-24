@@ -7,10 +7,12 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/pkg/errors"
 
 	docker "docker.io/go-docker"
 	"docker.io/go-docker/api/types"
+	"docker.io/go-docker/api/types/events"
 	"github.com/jinzhu/copier"
 	"github.com/miekg/dns"
 )
@@ -48,6 +50,20 @@ func MergeContainerRegistration(origin, merge ContainerRegistration) ContainerRe
 	return result
 }
 
+func containerToRegistration(container types.ContainerJSON) ContainerRegistration {
+	result := make(ContainerRegistration)
+	if container.HostConfig.NetworkMode != "host" {
+		addresableIP := []string{}
+		for network, settings := range container.NetworkSettings.Networks {
+			if network != "host" {
+				addresableIP = append(addresableIP, settings.IPAddress)
+			}
+		}
+		result[nameToHostname(container.Name)] = addresableIP
+	}
+	return result
+}
+
 func GenerateRecordsForContainers(client *docker.Client) (ContainerRegistration, error) {
 	result := make(ContainerRegistration)
 	containers, err := client.ContainerList(context.Background(), types.ContainerListOptions{})
@@ -57,9 +73,36 @@ func GenerateRecordsForContainers(client *docker.Client) (ContainerRegistration,
 
 	for _, container := range containers {
 		newRecords := containerToService(container)
-		records = MergeContainerRegistration(result, newRecords)
+		result = MergeContainerRegistration(result, newRecords)
 	}
 	return result, nil
+}
+
+func handleContainerStart(client *docker.Client, message events.Message) {
+	containerInfo, err := client.ContainerInspect(context.Background(), message.Actor.ID)
+	if err != nil {
+		panic(err)
+	}
+	newRecords := containerToRegistration(containerInfo)
+	records = MergeContainerRegistration(records, newRecords)
+	spew.Dump(records)
+}
+
+func handleContainerStop(message events.Message) {
+	delete(records, nameToHostname(message.Actor.Attributes["name"]))
+	spew.Dump(records)
+}
+
+func ListenToDockerEvents(client *docker.Client) error {
+	events, _ := client.Events(context.Background(), types.EventsOptions{})
+	for event := range events {
+		if event.Type == "container" && event.Action == "start" {
+			handleContainerStart(client, event)
+		} else if event.Type == "container" && event.Action == "stop" {
+			handleContainerStop(event)
+		}
+	}
+	return nil
 }
 
 func parseQuery(m *dns.Msg) {
@@ -112,6 +155,7 @@ func main() {
 		log.Fatalf("%e\n", err)
 		panic(err)
 	}
+	go ListenToDockerEvents(cli)
 
 	// start server
 	port := 53
