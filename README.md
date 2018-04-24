@@ -22,6 +22,8 @@ Add the entry `nameserver 127.0.0.1` to `/etc/resolv.conf`
 
 - [x] DNS Server
 - [x] Create DNS entries for containers at startup
+- [ ] DNS entry for each network of a container
+- [ ] Determine heuristic for default network
 - [ ] Listen docker event
 - [ ] Change DNS entries for containers on event
 - [ ] Install cobra to create good CLI
