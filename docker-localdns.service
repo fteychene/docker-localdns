@@ -1,0 +1,10 @@
+[Unit]
+Description=Docker localDNS
+After=network-online.target
+ 
+[Service]
+Type=simple
+ 
+ExecStart=/usr/bin/docker-localdns
+ 
+Restart=on-failure

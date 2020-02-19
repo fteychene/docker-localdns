@@ -7,13 +7,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/pkg/errors"
 
 	docker "docker.io/go-docker"
 	"docker.io/go-docker/api/types"
 	"docker.io/go-docker/api/types/events"
-	"github.com/jinzhu/copier"
 	"github.com/miekg/dns"
 )
 
@@ -21,12 +19,29 @@ type ContainerRegistration map[string][]string
 
 var records = ContainerRegistration{}
 
-func nameToHostname(name string) string {
-	return strings.TrimPrefix(name, "/") + ".docker.local."
+func sanitizeName(name string) string {
+	return strings.TrimPrefix(name, "/")
 }
 
-func containerToService(container types.Container) ContainerRegistration {
-	result := make(ContainerRegistration)
+func nameToHostnameDockerLocal(name string) string {
+	return sanitizeName(name) + ".docker.local."
+}
+
+func nameToHostnameDocker(name string) string {
+	return sanitizeName(name) + ".docker."
+}
+
+func addToRecords(name string, ip []string) {
+	log.Printf("Register record : %s -> %s\n", name, ip)
+	records[name] = ip
+}
+
+func removeFromRecords(name string) {
+	log.Printf("Unregister record : %s\n", name)
+	delete(records, name)
+}
+
+func containerToService(container types.Container) {
 	if container.HostConfig.NetworkMode != "host" {
 		for _, name := range container.Names {
 			addresableIP := []string{}
@@ -35,23 +50,14 @@ func containerToService(container types.Container) ContainerRegistration {
 					addresableIP = append(addresableIP, settings.IPAddress)
 				}
 			}
-			result[nameToHostname(name)] = addresableIP
+			addToRecords(nameToHostnameDockerLocal(name), addresableIP)
+			addToRecords(nameToHostnameDocker(name), addresableIP)
+			addToRecords(sanitizeName(name)+".", addresableIP)
 		}
 	}
-	return result
 }
 
-func MergeContainerRegistration(origin, merge ContainerRegistration) ContainerRegistration {
-	result := make(ContainerRegistration)
-	copier.Copy(&result, &origin)
-	for name, addressableIP := range merge {
-		result[name] = addressableIP
-	}
-	return result
-}
-
-func containerToRegistration(container types.ContainerJSON) ContainerRegistration {
-	result := make(ContainerRegistration)
+func containerToRegistration(container types.ContainerJSON) {
 	if container.HostConfig.NetworkMode != "host" {
 		addresableIP := []string{}
 		for network, settings := range container.NetworkSettings.Networks {
@@ -59,23 +65,22 @@ func containerToRegistration(container types.ContainerJSON) ContainerRegistratio
 				addresableIP = append(addresableIP, settings.IPAddress)
 			}
 		}
-		result[nameToHostname(container.Name)] = addresableIP
+		addToRecords(nameToHostnameDockerLocal(container.Name), addresableIP)
+		addToRecords(nameToHostnameDocker(container.Name), addresableIP)
+		addToRecords(sanitizeName(container.Name)+".", addresableIP)
 	}
-	return result
 }
 
-func GenerateRecordsForContainers(client *docker.Client) (ContainerRegistration, error) {
-	result := make(ContainerRegistration)
+func GenerateRecordsForContainers(client *docker.Client) error {
 	containers, err := client.ContainerList(context.Background(), types.ContainerListOptions{})
 	if err != nil {
-		return nil, errors.Wrap(err, "Error calling container list on docker cli")
+		return errors.Wrap(err, "Error calling container list on docker cli")
 	}
 
 	for _, container := range containers {
-		newRecords := containerToService(container)
-		result = MergeContainerRegistration(result, newRecords)
+		containerToService(container)
 	}
-	return result, nil
+	return nil
 }
 
 func handleContainerStart(client *docker.Client, message events.Message) {
@@ -83,14 +88,14 @@ func handleContainerStart(client *docker.Client, message events.Message) {
 	if err != nil {
 		panic(err)
 	}
-	newRecords := containerToRegistration(containerInfo)
-	records = MergeContainerRegistration(records, newRecords)
-	spew.Dump(records)
+	containerToRegistration(containerInfo)
 }
 
 func handleContainerStop(message events.Message) {
-	delete(records, nameToHostname(message.Actor.Attributes["name"]))
-	spew.Dump(records)
+	containerName := message.Actor.Attributes["name"]
+	removeFromRecords(nameToHostnameDockerLocal(containerName))
+	removeFromRecords(nameToHostnameDocker(containerName))
+	removeFromRecords(sanitizeName(containerName) + ".")
 }
 
 func ListenToDockerEvents(client *docker.Client) error {
@@ -98,7 +103,7 @@ func ListenToDockerEvents(client *docker.Client) error {
 	for event := range events {
 		if event.Type == "container" && event.Action == "start" {
 			handleContainerStart(client, event)
-		} else if event.Type == "container" && event.Action == "stop" {
+		} else if event.Type == "container" && (event.Action == "die" || event.Action == "stop" || event.Action == "kill") {
 			handleContainerStop(event)
 		}
 	}
@@ -134,7 +139,7 @@ func handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 }
 
 func StartDNSServer(host string, port int) (*dns.Server, error) {
-	dns.HandleFunc("docker.local.", handleDNSRequest)
+	dns.HandleFunc(".", handleDNSRequest)
 	server := &dns.Server{Addr: host + ":" + strconv.Itoa(port), Net: "udp"}
 	log.Printf("Starting at %d\n", port)
 	err := server.ListenAndServe()
@@ -150,7 +155,7 @@ func main() {
 		panic(err)
 	}
 
-	records, err = GenerateRecordsForContainers(cli)
+	err = GenerateRecordsForContainers(cli)
 	if err != nil {
 		log.Fatalf("%e\n", err)
 		panic(err)
