@@ -134,7 +134,7 @@ func handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 }
 
 func StartDNSServer(host string, port int) (*dns.Server, error) {
-	dns.HandleFunc("docker.local.", handleDNSRequest)
+	dns.HandleFunc(".", handleDNSRequest)
 	server := &dns.Server{Addr: host + ":" + strconv.Itoa(port), Net: "udp"}
 	log.Printf("Starting at %d\n", port)
 	err := server.ListenAndServe()
