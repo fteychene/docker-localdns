@@ -98,7 +98,7 @@ func ListenToDockerEvents(client *docker.Client) error {
 	for event := range events {
 		if event.Type == "container" && event.Action == "start" {
 			handleContainerStart(client, event)
-		} else if event.Type == "container" && event.Action == "stop" {
+		} else if event.Type == "container" && (event.Action == "die" || event.Action == "stop" || event.Action == "kill") {
 			handleContainerStop(event)
 		}
 	}
