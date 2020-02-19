@@ -33,6 +33,24 @@ CONTAINER ID        IMAGE               COMMAND                  CREATED        
 elegant_mcclintock.docker.local. 3600 IN A	172.17.0.2
 ...
 
+▶ dig elegant_mcclintock.docker
+...
+;; QUESTION SECTION:
+;elegant_mcclintock.docker. IN	A
+
+;; ANSWER SECTION:
+elegant_mcclintock.docker. 3600 IN A	172.17.0.2
+...
+
+▶ dig elegant_mcclintock
+...
+;; QUESTION SECTION:
+;elegant_mcclintock. IN	A
+
+;; ANSWER SECTION:
+elegant_mcclintock. 3600 IN A	172.17.0.2
+...
+
 ▶ docker stop elegant_mcclintock
 elegant_mcclintock
 
@@ -68,8 +86,7 @@ container1.docker.local. 3600	IN	A	172.17.0.2
 - [x] DNS Server
 - [x] Create DNS entries for containers at startup
 - [ ] DNS entry for each network of a container
-- [x] Listen docker container start
-- [x] Listen docker container stop
+- [x] Listen docker container start/stop/kill/die events
 - [ ] Listen docker network attach
 - [ ] Listen docker network detach
 - [ ] Change DNS entries for containers on event
