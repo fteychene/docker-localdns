@@ -20,6 +20,14 @@ servers=127.0.0.1,192.168.1.1
 ```
 where `192.168.1.1` is NetworkManager local DNS server
 
+### Archlinux install
+Compile from sources and install binary and systemd service 
+```bash
+cd ./package
+makepkg
+makepkg --install
+```
+
 # Usage
 
 ```bash
@@ -99,5 +107,5 @@ container1.docker.local. 3600	IN	A	172.17.0.2
 - [ ] Install cobra to create good CLI
 - [ ] Configure domain
 - [ ] Configure docker socket
-- [ ] Systemd service sample
+- [x] Systemd service sample
 - [ ] Register as dns server for host at startup
